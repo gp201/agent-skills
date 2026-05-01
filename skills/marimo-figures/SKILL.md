@@ -37,21 +37,34 @@ infer):
 ## Author pass
 
 1. Create or open `figures/<slug>.py` as a marimo notebook
-   (`marimo edit figures/<slug>.py` if starting fresh; otherwise edit the
-   file directly — marimo notebooks are plain Python with `@app.cell`
+   (`uv run marimo edit figures/<slug>.py` if starting fresh; otherwise edit
+   the file directly — marimo notebooks are plain Python with `@app.cell`
    decorators, so standard Edit/Write tools work).
-2. Structure the notebook as independent cells:
+   Include PEP 723 metadata at the top for reproducibility:
+   ```python
+   # /// script
+   # requires-python = ">=3.12"
+   # dependencies = ["marimo", "altair", "polars"]
+   # ///
+   ```
+2. Structure the notebook as independent cells — each cell is a function
+   whose parameters are other cells' return values (marimo manages
+   dependencies automatically; do not mutate objects across cells):
    - **imports** (marimo, altair/matplotlib, polars/pandas, numpy)
    - **params** — a single `mo.md` or dict cell with the claim, the data
      path, and any filter thresholds. Surface them so a reader can flip
-     one value and re-run.
+     one value and re-run. Use `mo.app_meta().mode == "script"` to swap
+     the data source when running non-interactively instead of hiding widgets.
    - **load** — read the data. Cache expensive loads with `mo.cache` or
      a parquet checkpoint.
    - **transform** — shape the dataframe to exactly the columns the plot
      needs. No plotting here.
    - **plot** — return a single `alt.Chart` (preferred) or `plt.Figure`.
+     Only the final expression in a cell renders; don't nest it.
    - **export** — `chart.save("figures/<slug>.png", scale_factor=2)` or
      `fig.savefig("figures/<slug>.png", dpi=200, bbox_inches="tight")`.
+   After authoring, validate with `marimo check figures/<slug>.py` to
+   catch dependency and reactivity issues before the reviewer pass.
 3. Default to **Altair/Vega-Lite** for categorical or small-multiple
    plots, **matplotlib** for anything involving custom axes, physical
    units, or dense scientific conventions (log-log, error bars,
