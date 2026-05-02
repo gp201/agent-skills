@@ -18,7 +18,7 @@ skills — they score and propose revisions but never edit the artifact they jud
 | [`dataset-insights`](skills/dataset-insights/SKILL.md) | `insight-reviewer` | Profile a dataset and produce ranked insights; reviewer scores them for novelty, actionability, and evidence. |
 | [`experiment-structure`](skills/experiment-structure/SKILL.md) | — | Canonical folder layout for an experiment (configs, src, scripts, runs, analysis, figures, reports) and rules for keeping it reproducible. |
 | [`podman-runner`](skills/podman-runner/SKILL.md) | — | Execute experiment commands inside a reproducible podman container with GPU passthrough, log capture, and run-directory conventions. |
-| [`plan-pi-review`](skills/plan-pi-review/SKILL.md) | — | PI-level review of a research plan: hypothesis validity, statistical design, reproducibility, resource feasibility, risk mapping. |
+| [`plan-pi-fleshout`](skills/plan-pi-fleshout/SKILL.md) | `plan-reviewer` | PI takes a grad student's fuzzy experimental idea, interrogates every vague term ("users", "improve", "the data") via iterative `AskUserQuestion`, drafts `PLAN.md` with atomic-commit-sized tasks and pseudocode, then loops with `plan-reviewer` until SOLID. |
 
 ## Reviewer agents
 
@@ -27,6 +27,7 @@ skills — they score and propose revisions but never edit the artifact they jud
 | [`tufte-reviewer`](agents/tufte-reviewer.md) | 8 Tufte dimensions (claim clarity, data-ink ratio, encoding discipline, axis honesty, color, comparison support, annotation economy, reproducibility). |
 | [`writing-reviewer`](agents/writing-reviewer.md) | 7 scientific-writing dimensions (claim-evidence linkage, uncertainty, scope honesty, IMRaD discipline, lede quality, reproducibility pointers, prose economy). |
 | [`insight-reviewer`](agents/insight-reviewer.md) | 3 insight dimensions (novelty, actionability, evidence) with KEEP / STRENGTHEN / CUT verdicts. |
+| [`plan-reviewer`](agents/plan-reviewer.md) | 7 plan-fleshout dimensions (no-assumption discipline, atomic-commit task sizing, testable verifiability, pseudocode coverage, input/output specificity, success-criteria observability, out-of-scope clarity) with BLOCK / CLARIFY / NIT faults and SOLID / NEEDS_REVISION verdict. Runs on Opus. |
 
 Reviewer agents are read-only (`Read, Grep, Glob, Bash`) — they score
 and propose revisions but never edit the artifact they judge.
@@ -34,7 +35,10 @@ and propose revisions but never edit the artifact they judge.
 ## How the pieces fit together
 
 ```
-/experiment-structure  ← lays out the directory
+/plan-pi-fleshout         ← Socratic Q&A on every vague term, writes PLAN.md
+        │                   └─ plan-reviewer (agent, Opus) ──▶ faults loop until SOLID
+        ▼
+/experiment-structure     ← lays out the directory
         │
         ├─ /podman-runner        ← runs scripts/ against configs/
         │        │
@@ -61,15 +65,16 @@ agent-skills/
 ├── .claude/
 │   └── settings.json          # permissions + auto mode, for use inside this repo
 ├── agents/
+│   ├── insight-reviewer.md
+│   ├── plan-reviewer.md
 │   ├── tufte-reviewer.md
-│   ├── writing-reviewer.md
-│   └── insight-reviewer.md
+│   └── writing-reviewer.md
 └── skills/
     ├── dataset-insights/
     ├── experiment-report/
     ├── experiment-structure/
     ├── marimo-figures/
-    ├── plan-pi-review/
+    ├── plan-pi-fleshout/
     └── podman-runner/
 ```
 
@@ -133,8 +138,8 @@ matching phrase from its `description` frontmatter.
 
 ```bash
 # user scope
-rm ~/.claude/agents/{tufte-reviewer,writing-reviewer,insight-reviewer}.md
-rm -r ~/.claude/commands/{dataset-insights,experiment-report,experiment-structure,marimo-figures,plan-pi-review,podman-runner}
+rm ~/.claude/agents/{tufte-reviewer,writing-reviewer,insight-reviewer,plan-reviewer}.md
+rm -r ~/.claude/commands/{dataset-insights,experiment-report,experiment-structure,marimo-figures,plan-pi-fleshout,podman-runner}
 ```
 
 ## Permissions / auto mode
