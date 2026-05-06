@@ -7,8 +7,8 @@ description: Use when the user wants to explore, profile, or "find something int
 
 Profile a dataset and produce a small, ranked list of *insights* — each
 one a claim the data actually supports, with a figure or table behind
-it. A reviewer subagent scores the insights against
-`INSIGHT_RUBRIC.md` and suggests which to keep, cut, or strengthen.
+it. The `insight-reviewer` agent scores the insights and suggests which
+to keep, cut, or strengthen.
 
 ## When to use
 
@@ -96,25 +96,20 @@ Ranking rules:
 
 ## Reviewer pass (required)
 
-Spawn a subagent against `INSIGHT_RUBRIC.md`:
+Spawn the `insight-reviewer` agent. It owns the rubric (Novelty /
+Actionability / Evidence, 1–5 each per insight; survival ≥ 11 with no
+dimension below 3) and returns per-insight verdicts plus up to 2 missed
+insights.
 
 ```
 Agent(
-  subagent_type="general-purpose",
+  subagent_type="insight-reviewer",
   description="Insight review of <slug>",
   prompt="""
-  Review analysis/<slug>/insights.md against the rubric at
-  skills/dataset-insights/INSIGHT_RUBRIC.md. The data is at
-  <data_path>; you may query it with duckdb/polars to spot-check
-  numbers. The audience is <audience> and the decision they face is
-  <decision>.
-
-  For each insight, score Novelty / Actionability / Evidence (1–5
-  each) with one-line justifications. Then recommend: KEEP, STRENGTHEN
-  (with specific ask), or CUT. Finally, propose up to 2 insights the
-  profile missed.
-
-  Report in under 500 words.
+  Insights: analysis/<slug>/insights.md
+  Data: <data_path>
+  Audience: <audience>
+  Decision: <decision>
   """
 )
 ```

@@ -26,7 +26,16 @@ Skip this skill when:
 
 ## Pre-session audit (silent — do not narrate)
 
-Before asking anything:
+Before asking anything, ensure the workspace is bootstrapped:
+
+```
+git rev-parse --is-inside-work-tree 2>/dev/null || git init
+entire enable --yes --agent claude-code
+```
+
+If either command fails, surface the error to the user and stop.
+
+Then run the audit:
 
 ```
 git log --oneline -20
@@ -52,16 +61,10 @@ Words that require clarification before they enter the plan — every time. The 
 |---|---|
 | "users", "researchers", "people", "patients" | named role, lab, cohort, persona; sample size |
 | "improve", "better", "faster" | metric with units, baseline, target delta |
-| "the data" | exact path, schema, row count, time window |
-| "the model" | architecture, training data, version, where the weights live |
+| "the data" / "the model" / project-specific noun | exact path, schema, version, artefact location |
 | "it should work" | acceptance criteria; one observable check that proves it |
 | "soon", "quickly", "later" | absolute date or hour budget |
-| "robust", "scalable", "production-ready" | concrete failure modes it must survive |
-| "clean the data" | which columns, which rows, what rule defines dirty |
 | "look at" / "explore" | the decision the look will inform |
-| "make a figure" / "visualize" | the one claim the figure is meant to prove |
-| "automate" | the manual step today and the trigger that should replace it |
-| "integrate" / "hook up" | the two systems and the contract between them |
 
 The general test: if you could write two different unit tests against the same word and both would pass, the word is vague. Domain jargon, project-specific nouns ("the pipeline", "the dashboard", "our schema"), and verbs whose object is implicit ("ship it", "wire it up", "handle the edge cases") are all fair game even though they aren't listed above.
 
@@ -100,19 +103,7 @@ For each term:
 
 If the user answers "I don't know yet", record it as `DEFERRED: <reason>` and surface it in `Open questions`. Do not invent.
 
-### Step A4 — Constraint elicitation
-
-After every term is `DEFINED` or `DEFERRED`, one `AskUserQuestion` per category — only those that haven't already come up:
-
-- **Time budget** — when is this needed by? what does "needed" mean (demo, paper deadline, advisor check-in)?
-- **Compute / resources** — what hardware, what storage, what budget?
-- **People** — who else is touching this? what's their availability?
-- **Dependencies** — what must exist before step 1 can start? is it ready?
-- **Out-of-scope** — what is the user *explicitly* not doing in this plan?
-
-`Out-of-scope` is mandatory. Every fleshout produces an explicit non-goals list.
-
-### Step A5 — Decision criteria
+### Step A4 — Decision criteria
 
 Before drafting, force one final clarification with a single `AskUserQuestion`:
 
@@ -123,6 +114,12 @@ Both answers go into the plan verbatim. If the user can't state the stop conditi
 ---
 
 ## Phase B — Draft `PLAN.md`
+
+### Step B0 — Inventory available skills and agents
+
+Before drafting any task, enumerate the skills and agents available in this environment. The system-reminder list of available skills and the `Agent` tool's subagent types are canonical; `~/.claude/skills/`, `.claude/skills/`, `~/.claude/agents/`, and `.claude/agents/` are fallbacks if the reminder is absent.
+
+Build a shortlist of skills/agents plausibly relevant to the user's goal. Each task in Step B2 must name the skill/agent that will execute it (or `manual` if none fits). Do not invent skills or agents you have not observed in the inventory.
 
 ### Step B1 — Pseudocode first, for every step that involves code
 
@@ -149,17 +146,8 @@ One sentence. The user's words, not yours.
 Every term the user clarified, in the form `<term as originally used> → <user's literal definition>`.
 
 ## Success criteria
-- Positive: <observable check from Step A5>
-- Stop / rethink: <observable check from Step A5>
-
-## Constraints
-- Deadline: …
-- Compute: …
-- People: …
-- Dependencies: …
-
-## Out-of-scope
-Mandatory. At least one explicit non-goal.
+- Positive: <observable check from Step A4>
+- Stop / rethink: <observable check from Step A4>
 
 ## Tasks
 Each task is one logical change → one commit. If a task feels like it would need
@@ -167,6 +155,7 @@ more than one commit, split it. Format:
 
 ### Task N — <imperative title>
 - **What** — one sentence.
+- **Skill / Agent** — the available skill or agent that will execute this task (from the Step B0 inventory), or `manual` if none fits.
 - **Inputs** — exact paths / artefacts that must exist before the task starts.
 - **Outputs** — exact paths / artefacts the task produces.
 - **Pseudocode** —
@@ -179,8 +168,7 @@ more than one commit, split it. Format:
 If a task depends on a `DEFERRED` answer, mark it `BLOCKED: <reason>` and stop detailing it.
 
 ## Open questions
-Every `DEFERRED` term, every constraint the user couldn't pin down, every assumption
-you were tempted to make and didn't. Verbatim.
+Every `DEFERRED` term and every assumption you were tempted to make and didn't. Verbatim.
 ```
 
 ---
@@ -222,15 +210,6 @@ These rules apply to any implementation work prompted by this plan, and they als
 
 ---
 
-## Planning
-
-- Before starting, generate a step-by-step plan and save it as `PLAN.md` in this directory.
-- Break the plan into small, discrete tasks — each task should map to a single commit.
-- Do not assume anything. If you need information, ask for it explicitly.
-- Wherever possible write pseudocode before implementing the actual code. This will help clarify your thoughts and make the implementation easier.
-
----
-
 ## Operational rules
 
 - **No assumption, ever.** If you are about to write a value into the plan that the user did not say, stop and ask.
@@ -238,11 +217,7 @@ These rules apply to any implementation work prompted by this plan, and they als
 - **Quote, don't paraphrase.** The plan reflects the user's words, not your cleaned-up version.
 - **Push twice on vague answers.** "It should be fast" → "fast compared to what?" → "<concrete number>". Only stop when an answer is testable.
 - **`DEFERRED` is allowed; invented is not.** If the user can't answer, the gap goes to `Open questions`.
-- **Out-of-scope is mandatory.** Every plan has at least one explicit non-goal.
-- **Pseudocode before implementation.** No code-producing task lands in the plan without pseudocode.
 - **Atomic tasks.** A task that touches three files for three reasons is three tasks.
-- **Dirty tree blocks new work.** If `git status` is non-empty when entering this skill, surface it before any other step.
-- **Reviewer loop is mandatory.** Do not declare the plan done until `plan-reviewer` returns SOLID (or the user explicitly accepts residual faults).
 - **No validation language.** Don't say "great", "interesting", "good idea". Reward clarity with the next question.
 - **Stop when the plan is the user's, not yours.** A good fleshout reads like a transcript of the user, not a generated artefact.
 

@@ -86,32 +86,25 @@ infer):
 
 ## Reviewer pass (required)
 
-After the PNG exists, spawn a subagent to grade it against
-`TUFTE_RUBRIC.md` in this skill directory:
+After the PNG exists, spawn the `tufte-reviewer` agent. It owns the rubric
+(8 dimensions, 1–5 each, ship bar ≥ 32/40 with no dimension below 3) and
+returns scores plus up to 5 revisions as diff hints.
 
 ```
 Agent(
-  subagent_type="general-purpose",
+  subagent_type="tufte-reviewer",
   description="Tufte review of <slug>",
   prompt="""
-  Review the figure at figures/<slug>.png against the rubric at
-  skills/marimo-figures/TUFTE_RUBRIC.md. The figure's intended claim is:
-  "<claim>". The notebook that produced it is figures/<slug>.py.
-
-  Score each of the 8 rubric dimensions 1–5 with a one-line justification.
-  Then list up to 5 concrete revisions, each phrased as a diff hint
-  ("change X to Y in cell <name>"). If the figure is already publication-
-  ready, say so and return an empty revision list.
-
-  Report in under 300 words.
+  Figure: figures/<slug>.png
+  Notebook: figures/<slug>.py
+  Claim: <claim>
   """
 )
 ```
 
-Read the reviewer's output. If the total score is ≥ 32/40 **and** every
-dimension is ≥ 3, ship. Otherwise apply the revisions and re-run the
-reviewer (max 2 revision rounds — after that, surface the disagreement
-to the user rather than iterating silently).
+Read the reviewer's output. If it meets the ship bar, ship. Otherwise apply
+the revisions and re-run the reviewer (max 2 revision rounds — after that,
+surface the disagreement to the user rather than iterating silently).
 
 ## Output
 

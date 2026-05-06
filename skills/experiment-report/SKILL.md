@@ -6,8 +6,8 @@ description: Use when the user asks to "write up", "summarize", or "report on" a
 # experiment-report
 
 Draft a short, claim-driven report of a completed experiment, then hand
-it to a reviewer subagent that checks structure, claim-evidence
-linkage, and statistical honesty against `WRITING_RUBRIC.md`.
+it to the `writing-reviewer` agent, which checks structure, claim-evidence
+linkage, and statistical honesty.
 
 ## When to use
 
@@ -121,34 +121,27 @@ reader would want them but they'd bloat the main flow.
 
 ## Reviewer pass (required)
 
-After the draft exists, spawn a subagent against `WRITING_RUBRIC.md`:
+After the draft exists, spawn the `writing-reviewer` agent. It owns the
+rubric (7 dimensions, 1–5 each; ship bar ≥ 28/35, no dimension < 3, zero
+unverifiable claims) and returns scores, unverifiable-claim flags, and up
+to 5 mechanical edits.
 
 ```
 Agent(
-  subagent_type="general-purpose",
+  subagent_type="writing-reviewer",
   description="Scientific-writing review of <slug>",
   prompt="""
-  Review the report at reports/<slug>.md against the rubric at
-  skills/experiment-report/WRITING_RUBRIC.md. The run it describes is
-  under runs/<id>/. You may read config.yaml and metrics.json to check
-  claim-evidence linkage.
-
-  Score each of the 7 rubric dimensions 1–5 with a one-line
-  justification. Flag any claim whose evidence you cannot locate in
-  the run directory. Then list up to 5 concrete edits, each phrased
-  as "replace X with Y in section Z".
-
-  Report in under 400 words.
+  Report: reports/<slug>.md
+  Run: runs/<id>/
   """
 )
 ```
 
-Apply the edits. Re-run the reviewer at most twice; after that,
-surface disagreements to the user.
+Apply the edits. Re-run the reviewer at most twice; after that, surface
+disagreements to the user.
 
-Flip the frontmatter `status` to `reviewed` once the reviewer's
-minimum bar is met (≥ 28/35, no dimension < 3, and zero unverifiable
-claims).
+Flip the frontmatter `status` to `reviewed` once the reviewer's ship bar
+is met.
 
 ## Output
 

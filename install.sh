@@ -20,3 +20,20 @@ install_links() {
 
 install_links "$REPO_DIR/agents" "$CLAUDE_DIR/agents" "reviewer agents"
 install_links "$REPO_DIR/skills" "$CLAUDE_DIR/commands" "skills"
+
+ensure_attribution() {
+    local settings_file="$CLAUDE_DIR/settings.json"
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq not found; skipping attribution block in $settings_file" >&2
+        return
+    fi
+    [ -f "$settings_file" ] || echo '{}' > "$settings_file"
+    local tmp
+    tmp="$(mktemp "$CLAUDE_DIR/.settings.json.XXXXXX")"
+    jq '.attribution.commit //= "" | .attribution.pr //= ""' \
+        "$settings_file" > "$tmp"
+    mv "$tmp" "$settings_file"
+    echo "ensured attribution block in $settings_file"
+}
+
+ensure_attribution
