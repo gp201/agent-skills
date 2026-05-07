@@ -47,6 +47,8 @@ git status --short
 
 If `git status` shows uncommitted changes, **stop and flag this to the user before any other step** — see *Commit Guidelines* below; you cannot start a new task with a dirty tree.
 
+**Inventory available skills and agents.** Enumerate every skill and agent in the environment — the system-reminder list and `Agent` tool subagent types are canonical; `~/.claude/skills/`, `.claude/skills/`, `~/.claude/agents/`, and `.claude/agents/` are fallbacks if absent. The inventory feeds Step B0 and sharpens Phase A questions when concrete options exist.
+
 The audit is silent. Use it to make questions sharper, not to perform diligence.
 
 ---
@@ -76,11 +78,9 @@ If the user uses any such word, the next `AskUserQuestion` is about that word �
 
 ### Step A1 — Restate, do not interpret
 
-Echo the user's idea back in their **own words**, verbatim where possible. One `AskUserQuestion`:
+Echo the user's idea back in their **own words**, verbatim where possible, as plain text. Then issue one `AskUserQuestion` (schema in Step A3) with options like `Yes, exactly` / `Mostly — small fix needed` / `No — I meant something different`.
 
-> Did I capture this right, or did I drop or add anything?
-
-Do not paraphrase into "I think you mean…". The point is to surface the raw idea so the user can see how little of it is concrete.
+Do not paraphrase into "I think you mean…". The point is to surface the raw idea so the user can see how little of it is concrete. If the user does not pick "Yes, exactly", treat their correction as the new restatement and re-ask. Cap at **3 rounds**; after that, accept the latest restatement and move on.
 
 ### Step A2 — Surface every load-bearing term
 
@@ -94,10 +94,12 @@ Walk the queue. **One question per term. Never batch.** Never combine "what data
 
 For each term:
 
-1. Quote the user's original sentence containing the term.
+1. Quote the user's original sentence containing the term in plain text.
 2. State why it is ambiguous in this context (one sentence).
-3. Offer 2–4 concrete options *if* the audit gives evidence that narrows the space. Otherwise ask open-ended.
-4. Mark the term `DEFINED: <user's literal answer>` once they respond.
+3. Issue an `AskUserQuestion` call. The tool **requires** a `questions` array; each entry needs `question`, `header` (≤12 chars), 2–4 `options` (each with `label` and `description`), and `multiSelect`. There is no open-ended mode — the harness appends "Other" for free-form input.
+   - When the audit gives evidence that narrows the space, use 2–4 concrete options drawn from that evidence.
+   - When you have no narrowing evidence, use generic structural options — e.g. `A specific named entity`, `A category or range`, `Don't know yet (defer)`, `Other (type it)` — so the user is steered to "Other" rather than anchored on a fabricated specific.
+4. Mark the term `DEFINED: <user's literal answer>` once they respond. If they answered via "Other", record the literal text they typed.
 
 **Push once, then push again.** First answers are usually still abstract — "make it faster" → "fast enough for users" → "<200ms p95 on the dashboard endpoint". Only stop when the answer is something you could write a unit test against.
 
@@ -105,21 +107,20 @@ If the user answers "I don't know yet", record it as `DEFERRED: <reason>` and su
 
 ### Step A4 — Decision criteria
 
-Before drafting, force one final clarification with a single `AskUserQuestion`:
+Before drafting, force two final clarifications:
 
-> What observation would tell you this plan succeeded? What observation would tell you to stop and rethink?
+1. "What observation would tell you this plan succeeded?"
+2. "What observation would tell you to stop and rethink?"
 
-Both answers go into the plan verbatim. If the user can't state the stop condition, return to Step A3 with the gap as a new vague term.
+These are a paired decision, so issue them as **one** `AskUserQuestion` call with both entries in the `questions` array (this saves a round-trip and is unlike Step A3's never-batch rule, which applies to unrelated ambiguous terms). Never collapse them into one prose question string. Both answers go into the plan verbatim. If the user can't state the stop condition, return to Step A3 with the gap as a new vague term.
 
 ---
 
 ## Phase B — Draft `PLAN.md`
 
-### Step B0 — Inventory available skills and agents
+### Step B0 — Shortlist skills and agents for this goal
 
-Before drafting any task, enumerate the skills and agents available in this environment. The system-reminder list of available skills and the `Agent` tool's subagent types are canonical; `~/.claude/skills/`, `.claude/skills/`, `~/.claude/agents/`, and `.claude/agents/` are fallbacks if the reminder is absent.
-
-Build a shortlist of skills/agents plausibly relevant to the user's goal. Each task in Step B2 must name the skill/agent that will execute it (or `manual` if none fits). Do not invent skills or agents you have not observed in the inventory.
+The full inventory was already taken during the pre-session audit. Now, with the user's `DEFINED` answers in hand, narrow that inventory to the shortlist plausibly relevant to this goal. Each task in Step B2 must name the skill/agent that will execute it (or `manual` if none fits). Do not invent skills or agents that aren't in the inventory.
 
 ### Step B1 — Pseudocode first, for every step that involves code
 
@@ -183,8 +184,8 @@ Invoke the `plan-reviewer` agent (Opus, read-only) via the `Agent` tool with `su
 
 For every BLOCK or CLARIFY fault that names a missing user decision:
 
-1. Ask the user one `AskUserQuestion` per fault. Never batch.
-2. Quote the reviewer's exact concern so the user can see the source.
+1. Ask the user one `AskUserQuestion` per fault (schema in Step A3). Never batch unrelated faults.
+2. Quote the reviewer's exact concern in plain text immediately before the question, so the user can see the source.
 3. Update the relevant section of `PLAN.md` with the user's literal answer (move the term from `Open questions` to `Definitions` or revise the affected task).
 
 For NIT faults: fix in place if the fix doesn't require user input; otherwise add to `Open questions`.
@@ -213,7 +214,8 @@ These rules apply to any implementation work prompted by this plan, and they als
 ## Operational rules
 
 - **No assumption, ever.** If you are about to write a value into the plan that the user did not say, stop and ask.
-- **One ambiguous word = one `AskUserQuestion`.** Never batch.
+- **`AskUserQuestion` is structured — never call it with a bare question string.** Full schema in Step A3.
+- **One ambiguous word = one `AskUserQuestion` call.** Never batch unrelated terms into the same `questions` array. (Paired questions on the same decision, like Step A4, are the exception.)
 - **Quote, don't paraphrase.** The plan reflects the user's words, not your cleaned-up version.
 - **Push twice on vague answers.** "It should be fast" → "fast compared to what?" → "<concrete number>". Only stop when an answer is testable.
 - **`DEFERRED` is allowed; invented is not.** If the user can't answer, the gap goes to `Open questions`.
