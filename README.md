@@ -1,54 +1,59 @@
 # agent-skills
 
-A small set of subagents for computational-experiment workflows. Each agent is a
-single markdown file with YAML frontmatter + prose instructions that
-Claude Code can delegate to via the `Agent` tool.
+Skills and reviewer subagents for computational-experiment workflows.
 
-Three of the author agents pair with a named *reviewer* agent so
-nothing ships without a second pass.
+**Skills** (`skills/`) are user-invoked via `/skill-name` and run inline in the
+main conversation. Each skill orchestrates its own workflow and spawns reviewer
+subagents as needed.
 
-## Agents
+**Reviewer agents** (`agents/`) are read-only subagents spawned internally by
+skills — they score and propose revisions but never edit the artifact they judge.
 
-### Author agents
+## Skills
 
-| Agent | Pairs with | What it does |
+| Skill | Pairs with | What it does |
 | --- | --- | --- |
-| [`marimo-figures`](agents/marimo-figures.md) | `tufte-reviewer` | Build a figure in a marimo notebook; reviewer scores it against Tufte's principles and returns revisions. |
-| [`experiment-report`](agents/experiment-report.md) | `writing-reviewer` | Draft an IMRaD report of a run; reviewer checks structure, claim-evidence linkage, and statistical honesty. |
-| [`dataset-insights`](agents/dataset-insights.md) | `insight-reviewer` | Profile a dataset and produce ranked insights; reviewer scores them for novelty, actionability, and evidence. |
-| [`experiment-structure`](agents/experiment-structure.md) | — | Canonical folder layout for an experiment (configs, src, scripts, runs, analysis, figures, reports) and rules for keeping it reproducible. |
-| [`podman-runner`](agents/podman-runner.md) | — | Single entry point for executing experiment commands inside a reproducible podman container, with GPU passthrough, log capture, and run-directory conventions. |
+| [`marimo-figures`](skills/marimo-figures/SKILL.md) | `tufte-reviewer` | Build a figure in a marimo notebook; reviewer scores it against Tufte's principles and returns revisions. |
+| [`experiment-report`](skills/experiment-report/SKILL.md) | `writing-reviewer` | Draft an IMRaD report of a run; reviewer checks structure, claim-evidence linkage, and statistical honesty. |
+| [`dataset-insights`](skills/dataset-insights/SKILL.md) | `insight-reviewer` | Profile a dataset and produce ranked insights; reviewer scores them for novelty, actionability, and evidence. |
+| [`experiment-structure`](skills/experiment-structure/SKILL.md) | — | Canonical folder layout for an experiment (configs, src, scripts, runs, analysis, figures, reports) and rules for keeping it reproducible. |
+| [`podman-runner`](skills/podman-runner/SKILL.md) | — | Execute experiment commands inside a reproducible podman container with GPU passthrough, log capture, and run-directory conventions. |
+| [`plan-pi-fleshout`](skills/plan-pi-fleshout/SKILL.md) | `plan-reviewer` | PI takes a grad student's fuzzy experimental idea, interrogates every vague term ("users", "improve", "the data") via iterative `AskUserQuestion`, drafts `PLAN.md` with atomic-commit-sized tasks and pseudocode, then loops with `plan-reviewer` until SOLID. |
 
-### Reviewer agents
+## Reviewer agents
 
 | Agent | Rubric it enforces |
 | --- | --- |
 | [`tufte-reviewer`](agents/tufte-reviewer.md) | 8 Tufte dimensions (claim clarity, data-ink ratio, encoding discipline, axis honesty, color, comparison support, annotation economy, reproducibility). |
 | [`writing-reviewer`](agents/writing-reviewer.md) | 7 scientific-writing dimensions (claim-evidence linkage, uncertainty, scope honesty, IMRaD discipline, lede quality, reproducibility pointers, prose economy). |
 | [`insight-reviewer`](agents/insight-reviewer.md) | 3 insight dimensions (novelty, actionability, evidence) with KEEP / STRENGTHEN / CUT verdicts. |
+| [`plan-reviewer`](agents/plan-reviewer.md) | 7 plan-fleshout dimensions (no-assumption discipline, atomic-commit task sizing, testable verifiability, pseudocode coverage, input/output specificity, success-criteria observability, out-of-scope clarity) with BLOCK / CLARIFY / NIT faults and SOLID / NEEDS_REVISION verdict. Runs on Opus. |
 
 Reviewer agents are read-only (`Read, Grep, Glob, Bash`) — they score
 and propose revisions but never edit the artifact they judge.
 
-## How the agents fit together
+## How the pieces fit together
 
 ```
-experiment-structure   ← lays out the directory
+/plan-pi-fleshout         ← Socratic Q&A on every vague term, writes PLAN.md
+        │                   └─ plan-reviewer (agent, Opus) ──▶ faults loop until SOLID
+        ▼
+/experiment-structure     ← lays out the directory
         │
-        ├─ podman-runner         ← runs scripts/ against configs/
+        ├─ /podman-runner        ← runs scripts/ against configs/
         │        │
         │        └─ produces runs/<id>/
         │
-        ├─ dataset-insights      ← reads data/ → writes analysis/<slug>/
-        │        └─ insight-reviewer
-        ├─ marimo-figures        ← reads runs/<id>/ → writes figures/<slug>.png
-        │        └─ tufte-reviewer
-        └─ experiment-report     ← reads runs/ + figures/ → writes reports/<slug>.md
-                 └─ writing-reviewer
+        ├─ /dataset-insights     ← reads data/ → writes analysis/<slug>/
+        │        └─ insight-reviewer (agent)
+        ├─ /marimo-figures       ← reads runs/<id>/ → writes figures/<slug>.png
+        │        └─ tufte-reviewer (agent)
+        └─ /experiment-report    ← reads runs/ + figures/ → writes reports/<slug>.md
+                 └─ writing-reviewer (agent)
 ```
 
-Author agents delegate the review pass by calling the `Agent` tool
-with `subagent_type="<reviewer-name>"`.
+Skills spawn reviewer agents via the `Agent` tool with
+`subagent_type="<reviewer-name>"`.
 
 ## Layout
 
@@ -59,26 +64,28 @@ agent-skills/
 ├── install.sh
 ├── .claude/
 │   └── settings.json          # permissions + auto mode, for use inside this repo
-└── agents/
-    ├── marimo-figures.md
-    ├── tufte-reviewer.md
-    ├── experiment-report.md
-    ├── writing-reviewer.md
-    ├── dataset-insights.md
-    ├── insight-reviewer.md
-    ├── experiment-structure.md
-    └── podman-runner.md
+├── agents/
+│   ├── insight-reviewer.md
+│   ├── plan-reviewer.md
+│   ├── tufte-reviewer.md
+│   └── writing-reviewer.md
+└── skills/
+    ├── dataset-insights/
+    ├── experiment-report/
+    ├── experiment-structure/
+    ├── marimo-figures/
+    ├── plan-pi-fleshout/
+    └── podman-runner/
 ```
 
 ## Install
 
-Claude Code discovers subagents in two locations:
+Claude Code discovers skills and agents in two scopes:
 
-- `~/.claude/agents/<agent-name>.md` — available in every project (user scope)
-- `<repo>/.claude/agents/<agent-name>.md` — available only when Claude Code runs in that repo (project scope)
+- `~/.claude/` — available in every project (user scope)
+- `<repo>/.claude/` — available only when Claude Code runs in that repo (project scope)
 
-Pick one. Symlinking is preferred over copying so `git pull` updates the
-installed agents.
+Symlinking is preferred over copying so `git pull` updates everything.
 
 ### Option 1 — user scope (available everywhere)
 
@@ -90,19 +97,15 @@ git clone https://github.com/<you>/agent-skills.git ~/agent-skills
 Or equivalently:
 
 ```bash
-mkdir -p ~/.claude/agents
+mkdir -p ~/.claude/agents ~/.claude/commands
+# reviewer agents
 for f in ~/agent-skills/agents/*.md; do
   ln -sfn "$f" ~/.claude/agents/"$(basename "$f")"
 done
-```
-
-Verify from any project:
-
-```bash
-ls ~/.claude/agents
-# dataset-insights.md   experiment-report.md  experiment-structure.md
-# insight-reviewer.md   marimo-figures.md     podman-runner.md
-# tufte-reviewer.md     writing-reviewer.md
+# skills
+for d in ~/agent-skills/skills/*/; do
+  ln -sfn "$d" ~/.claude/commands/"$(basename "$d")"
+done
 ```
 
 ### Option 2 — project scope (only in a specific repo)
@@ -110,32 +113,33 @@ ls ~/.claude/agents
 From inside the target repo:
 
 ```bash
-mkdir -p .claude/agents
+mkdir -p .claude/agents .claude/commands
 for f in ~/agent-skills/agents/*.md; do
   ln -sfn "$f" .claude/agents/"$(basename "$f")"
 done
+for d in ~/agent-skills/skills/*/; do
+  ln -sfn "$d" .claude/commands/"$(basename "$d")"
+done
 ```
 
-Commit `.claude/agents/` so teammates pick the agents up automatically.
+Commit `.claude/` so teammates pick everything up automatically.
 
 ### Verify
 
-Start Claude Code in a project where the agents are installed and ask:
+Start Claude Code in a project where the skills are installed and ask:
 
-> list the subagents you have available
+> list the skills and subagents you have available
 
-The eight agents above should appear. Trigger one with a matching
-phrase from its `description` frontmatter (e.g. "plot this and
-tufte-check it" → `marimo-figures`, which will then delegate to
-`tufte-reviewer`).
+All skills and reviewer agents should appear. Invoke a skill by name
+(e.g. `/marimo-figures`, `/dataset-insights`) or trigger it with a
+matching phrase from its `description` frontmatter.
 
 ### Uninstall
 
 ```bash
 # user scope
-rm ~/.claude/agents/{marimo-figures,tufte-reviewer,experiment-report,writing-reviewer,dataset-insights,insight-reviewer,experiment-structure,podman-runner}.md
-# project scope
-rm <repo>/.claude/agents/{marimo-figures,tufte-reviewer,experiment-report,writing-reviewer,dataset-insights,insight-reviewer,experiment-structure,podman-runner}.md
+rm ~/.claude/agents/{tufte-reviewer,writing-reviewer,insight-reviewer,plan-reviewer}.md
+rm -r ~/.claude/commands/{dataset-insights,experiment-report,experiment-structure,marimo-figures,plan-pi-fleshout,podman-runner}
 ```
 
 ## Permissions / auto mode

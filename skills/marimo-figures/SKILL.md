@@ -37,25 +37,39 @@ infer):
 ## Author pass
 
 1. Create or open `figures/<slug>.py` as a marimo notebook
-   (`marimo edit figures/<slug>.py` if starting fresh; otherwise edit the
-   file directly — marimo notebooks are plain Python with `@app.cell`
+   (`uv run marimo edit figures/<slug>.py` if starting fresh; otherwise edit
+   the file directly — marimo notebooks are plain Python with `@app.cell`
    decorators, so standard Edit/Write tools work).
-2. Structure the notebook as independent cells:
-   - **imports** (marimo, altair/matplotlib, polars/pandas, numpy)
+   Include PEP 723 metadata at the top for reproducibility:
+   ```python
+   # /// script
+   # requires-python = ">=3.12"
+   # dependencies = ["marimo", "seaborn", "matplotlib", "polars"]
+   # ///
+   ```
+2. Structure the notebook as independent cells — each cell is a function
+   whose parameters are other cells' return values (marimo manages
+   dependencies automatically; do not mutate objects across cells):
+   - **imports** (marimo, seaborn, matplotlib, polars/pandas, numpy)
    - **params** — a single `mo.md` or dict cell with the claim, the data
      path, and any filter thresholds. Surface them so a reader can flip
-     one value and re-run.
-   - **load** — read the data. Cache expensive loads with `mo.cache` or
-     a parquet checkpoint.
+     one value and re-run. Use `mo.app_meta().mode == "script"` to swap
+     the data source when running non-interactively instead of hiding widgets.
+   - **load** — read the data. Gate slow loads with `@mo.cache` (see
+     [Expensive notebooks](#expensive-notebooks) for other options).
    - **transform** — shape the dataframe to exactly the columns the plot
      needs. No plotting here.
-   - **plot** — return a single `alt.Chart` (preferred) or `plt.Figure`.
-   - **export** — `chart.save("figures/<slug>.png", scale_factor=2)` or
-     `fig.savefig("figures/<slug>.png", dpi=200, bbox_inches="tight")`.
-3. Default to **Altair/Vega-Lite** for categorical or small-multiple
-   plots, **matplotlib** for anything involving custom axes, physical
-   units, or dense scientific conventions (log-log, error bars,
-   colorbars).
+   - **plot** — return a single `plt.Figure`. Only the final expression
+     in a cell renders; don't nest it.
+   - **export** — `fig.savefig("figures/<slug>.png", dpi=200,
+     bbox_inches="tight")`.
+3. **Default to seaborn** for figures — it sits on matplotlib with cleaner
+   defaults for statistical plots. Drop to bare matplotlib only for custom
+   axes, physical units, or dense scientific conventions (log-log, error
+   bars, colorbars). Set label/font sizing once with
+   `sns.set_context("notebook", font_scale=1)` and `sns.set_style("white")`.
+   For an interactive figure with box/lasso selection, see
+   [Interactive figures](#interactive-figures-preferred).
 4. Design rules (pre-empt common Tufte failures):
    - Title = the claim, not "Figure 1".
    - Label both axes with units. No `x`, `y`, `value`.
@@ -68,37 +82,46 @@ infer):
    - For categorical x-axes with > 6 levels, sort by the encoded metric.
    - Colors: for sequential data use `viridis`/`magma`; for diverging use
      `RdBu`; for categorical ≤ 8 use `tab10`. Never rainbow.
-5. Render and save the PNG. Also save the chart spec (`chart.to_json()`
-   for Altair) next to it so the review is reproducible.
+5. Render and save the PNG.
+
+## Verify the notebook runs (required)
+
+Before the reviewer pass, confirm the notebook is actually executable —
+otherwise the PNG you're shipping may be stale.
+
+```bash
+uvx marimo check figures/<slug>.py   # lint: dependency / reactivity issues
+uv run figures/<slug>.py             # script-mode execute end-to-end
+```
+
+Both must pass. `marimo check` catches missing dependencies and bad
+cell graphs; `uv run` executes the notebook in script mode and will
+re-emit the PNG. If `uv run` succeeds but the PNG didn't update, the
+export cell isn't wired into the dependency graph — fix that before
+shipping. See [Expensive notebooks](#expensive-notebooks) below if
+execution is too slow to run end-to-end on every iteration.
 
 ## Reviewer pass (required)
 
-After the PNG exists, spawn a subagent to grade it against
-`TUFTE_RUBRIC.md` in this skill directory:
+After the PNG exists, spawn the `tufte-reviewer` agent. It owns the rubric
+(8 dimensions, 1–5 each, ship bar ≥ 32/40 with no dimension below 3) and
+returns scores plus up to 5 revisions as diff hints.
 
 ```
 Agent(
-  subagent_type="general-purpose",
+  subagent_type="tufte-reviewer",
   description="Tufte review of <slug>",
   prompt="""
-  Review the figure at figures/<slug>.png against the rubric at
-  skills/marimo-figures/TUFTE_RUBRIC.md. The figure's intended claim is:
-  "<claim>". The notebook that produced it is figures/<slug>.py.
-
-  Score each of the 8 rubric dimensions 1–5 with a one-line justification.
-  Then list up to 5 concrete revisions, each phrased as a diff hint
-  ("change X to Y in cell <name>"). If the figure is already publication-
-  ready, say so and return an empty revision list.
-
-  Report in under 300 words.
+  Figure: figures/<slug>.png
+  Notebook: figures/<slug>.py
+  Claim: <claim>
   """
 )
 ```
 
-Read the reviewer's output. If the total score is ≥ 32/40 **and** every
-dimension is ≥ 3, ship. Otherwise apply the revisions and re-run the
-reviewer (max 2 revision rounds — after that, surface the disagreement
-to the user rather than iterating silently).
+Read the reviewer's output. If it meets the ship bar, ship. Otherwise apply
+the revisions and re-run the reviewer (max 2 revision rounds — after that,
+surface the disagreement to the user rather than iterating silently).
 
 ## Output
 
@@ -115,7 +138,88 @@ Report to the user:
   claim, say so and stop.
 - Don't skip the reviewer pass because the figure "looks fine". The
   whole point of this skill is the second opinion.
+- Don't skip the `marimo check` + `uv run` step — a notebook that
+  doesn't run isn't a notebook.
 - Don't bundle multiple claims into one figure. If the reviewer flags
   "two claims", split into `figures/<slug>-a.py` and `<slug>-b.py`.
 - Don't commit the PNG without the `.py` notebook next to it — the
   notebook is the source of truth.
+
+## UI elements
+
+marimo has a rich set of UI components. The ones most useful for
+figure-authoring are listed below. For anything else, query the live
+docstring:
+
+```bash
+uv run --with marimo python -c "import marimo as mo; help(mo.ui.slider)"
+```
+
+### Interactive figures (preferred)
+
+Wrap the axes with `mo.ui.matplotlib` for box (drag) / lasso
+(`Shift`+drag) selection. The figure renders as a static image with a
+selection overlay; the selection is available downstream as
+`chart.value`.
+
+```python
+fig, ax = plt.subplots()
+sns.scatterplot(data=df, x="x", y="y", ax=ax)
+chart = mo.ui.matplotlib(ax)
+chart
+```
+
+```python
+mask = chart.value.get_mask(df["x"], df["y"])
+selected = df[mask]
+```
+
+Reach for plotly only if you need hover tooltips or 3D.
+
+### Other widgets
+
+Names + use cases below. Run `help(mo.ui.X)` for signatures.
+
+* `slider` / `range_slider` — drive a numeric param or filter range.
+* `dropdown` — pick a column or category.
+* `checkbox` — toggle a layer (e.g. error bars).
+* `run_button` — gate an expensive re-render; pair with
+  `mo.stop(not run_btn.value)`.
+* `date` / `number` — exact inputs where a slider is too coarse.
+* `table` — surface the underlying rows.
+* `tabs` — stack alternative views of the same claim (raw / smoothed /
+  residuals).
+* `.batch().form()` on an `mo.md` template — collect several inputs and
+  re-render only on submit; useful when each change is itself expensive.
+
+## Expensive notebooks
+
+When load / transform / render takes more than a couple seconds, pick
+the lightest tool that solves your case:
+
+* `mo.stop(cond, msg)` — halt a cell when a precondition isn't met.
+* `mo.ui.run_button` + `mo.stop(not btn.value)` — gate an expensive
+  render on an explicit click so slider tweaks don't trigger work
+  mid-edit.
+* `@mo.cache` — in-memory memoization for the kernel session.
+* `@mo.persistent_cache` — disk cache across restarts; use for slow
+  stable loads (large joins, model inference).
+* `mo.lazy(thunk)` — defer rendering until a tab is selected or a table
+  scrolls into view.
+
+For notebooks that should never autorun, set
+`[tool.marimo.runtime] on_cell_change = "lazy"` in `pyproject.toml`.
+
+## Configuration
+
+The PEP 723 block in [Author pass step 1](#author-pass) is the only
+config that travels with the figure. For repo-wide defaults
+(`[tool.marimo.runtime] on_cell_change`, `[tool.marimo.display]
+default_width`, etc.), run `marimo config describe` for the full key
+list and `marimo config show` to see what's currently active.
+
+- Don't put per-figure dependencies in `pyproject.toml` — they belong in
+  the PEP 723 block so `uv run figures/<slug>.py` works from a clean
+  checkout.
+- Don't set `theme = "dark"` for figures exported as PNGs — the saved
+  figure inherits matplotlib rcParams, not the marimo theme.
