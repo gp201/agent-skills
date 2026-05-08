@@ -19,7 +19,7 @@ install_links() {
 }
 
 install_links "$REPO_DIR/agents" "$CLAUDE_DIR/agents" "reviewer agents"
-install_links "$REPO_DIR/skills" "$CLAUDE_DIR/commands" "skills"
+install_links "$REPO_DIR/skills" "$CLAUDE_DIR/skills" "skills"
 
 ensure_attribution() {
     local settings_file="$CLAUDE_DIR/settings.json"
